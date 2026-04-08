@@ -1,10 +1,11 @@
-import { MapPin, Compass, Calendar, Download } from "lucide-react";
+import { MapPin, Compass, Calendar, Download, Home, LifeBuoy } from "lucide-react";
 import { BentoCard, BentoGrid } from "./components/BentoCard";
 import { MetricCard } from "./components/MetricCard";
 import { TabBar } from "./components/TabBar";
 import { DayBlock } from "./components/DayBlock";
 import { RVParkCard } from "./components/RVParkCard";
-import { StayPlan } from "./lib/types";
+import { LifestyleDashboard } from "./components/LifestyleDashboard";
+import { StayPlan, Day, RVPark } from "./lib/types";
 import { useState, useEffect } from "react";
 import { fetchDestination } from "./lib/api";
 import { ExploreResult } from "./lib/realData";
@@ -14,143 +15,52 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("explorer");
 
   return (
-    <div
-      style={{
-        backgroundColor: "#000000",
-        minHeight: "100dvh",
-        padding: "20px",
-      }}
-    >
-      {/* Container */}
-      <div
-        style={{
-          maxWidth: "1280px",
-          margin: "0 auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-        }}
-      >
-        {/* ── Header ──────────────────────────────────────── */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "16px",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <h1
-              style={{
-                fontFamily: "Inter, sans-serif",
-                fontSize: "1.25rem",
-                fontWeight: 600,
-                color: "#fafafa",
-                letterSpacing: "-0.03em",
-                lineHeight: 1.2,
-              }}
-            >
-              📍 RV Explorer
-            </h1>
-            <p
-              style={{
-                color: "#52525b",
-                fontSize: "0.75rem",
-                marginTop: "4px",
-                letterSpacing: "0.01em",
-              }}
-            >
-              Destination-first planning · Brinkley 4100 · Full-time RV life
-            </p>
-          </div>
+    <div style={{ backgroundColor: "#000000", minHeight: "100dvh", padding: "20px" }}>
+      <div style={{ maxWidth: "1280px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "20px" }}>
 
-          {/* Status */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              backgroundColor: "rgba(34,197,94,0.08)",
-              border: "1px solid rgba(34,197,94,0.15)",
-              borderRadius: "9999px",
-              padding: "6px 12px",
-            }}
-          >
-            <span
-              style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                backgroundColor: "#22c55e",
-                boxShadow: "0 0 0 3px rgba(34,197,94,0.15)",
-                flexShrink: 0,
-              }}
-              className="glow-pulse"
-            />
-            <span
-              style={{
-                color: "#4ade80",
-                fontSize: "0.6875rem",
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-              }}
-            >
-              Deployed
-            </span>
-          </div>
-        </div>
+        {/* ── Header ──────────────────────────────────────── */}
+        <Header />
 
         {/* ── Tab Bar ─────────────────────────────────────── */}
         <TabBar
           tabs={[
-            {
-              id: "explorer",
-              label: "RV Explorer",
-              icon: <MapPin size={14} />,
-              badge: "New",
-            },
-            {
-              id: "planner",
-              label: "Trip Planner",
-              icon: <Compass size={14} />,
-            },
+            { id: "explorer", label: "RV Explorer", icon: <MapPin size={14} /> },
+            { id: "fulltime", label: "Full-Time RV Life", icon: <Home size={14} />, badge: "Live" },
+            { id: "planner", label: "Trip Planner", icon: <Compass size={14} /> },
           ]}
           activeTab={activeTab}
           onTabChange={setActiveTab}
         />
 
         {/* ── Tab Content ─────────────────────────────────── */}
-        {activeTab === "explorer" ? <ExplorerTab /> : <PlannerTab />}
+        {activeTab === "explorer" ? <ExplorerTab /> :
+         activeTab === "fulltime" ? <FullTimeTab /> :
+         <PlannerTab />}
 
         {/* ── Footer ──────────────────────────────────────── */}
-        <footer
-          style={{
-            borderTop: "1px solid #18181b",
-            paddingTop: "16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "8px",
-          }}
-        >
-          <p style={{ color: "#3f3f46", fontSize: "0.6875rem" }}>
-            Built for Adler Synod · Brinkley 4100 · Personal Use Only
-          </p>
-          <p
-            style={{
-              color: "#27272a",
-              fontSize: "0.625rem",
-              fontFamily: "'JetBrains Mono', monospace",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            ADLER NOIR v1.0.0
-          </p>
-        </footer>
+        <Footer />
+      </div>
+    </div>
+  );
+}
+
+// ─── Header ───────────────────────────────────────────────────────
+function Header() {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
+      <div>
+        <h1 style={{ fontFamily: "Inter, sans-serif", fontSize: "1.25rem", fontWeight: 600, color: "#fafafa", letterSpacing: "-0.03em", lineHeight: 1.2 }}>
+          📍 RV Explorer
+        </h1>
+        <p style={{ color: "#52525b", fontSize: "0.75rem", marginTop: "4px", letterSpacing: "0.01em" }}>
+          Destination-first planning · Brinkley 4100 · Full-time RV life
+        </p>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", backgroundColor: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.15)", borderRadius: "9999px", padding: "6px 12px" }}>
+        <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#22c55e", boxShadow: "0 0 0 3px rgba(34,197,94,0.15)", flexShrink: 0 }} className="glow-pulse" />
+        <span style={{ color: "#4ade80", fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Deployed
+        </span>
       </div>
     </div>
   );
@@ -159,12 +69,12 @@ export default function App() {
 // ─── Explorer Tab ─────────────────────────────────────────────────
 function ExplorerTab() {
   const [destination, setDestination] = useState("");
-  const [nights, setNights] = useState(2);
+  const [nights, setNights] = useState(3);
   const [result, setResult] = useState<ExploreResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load real Sedona data on first mount
+  // Load real Sedona data on mount
   useEffect(() => {
     async function loadSedona() {
       setLoading(true);
@@ -172,7 +82,7 @@ function ExplorerTab() {
       try {
         const data = await fetchDestination("Sedona", "AZ", 3);
         setResult(data);
-      } catch (e) {
+      } catch {
         setError("Failed to load data");
       } finally {
         setLoading(false);
@@ -186,7 +96,6 @@ function ExplorerTab() {
     setLoading(true);
     setError(null);
     try {
-      // Parse "City, State" format
       const parts = destination.split(",").map((p) => p.trim());
       const city = parts[0] || "Sedona";
       const state = parts[1] || "AZ";
@@ -209,20 +118,9 @@ function ExplorerTab() {
         <p className="label-noir" style={{ marginBottom: "14px" }}>
           Where do you want to go?
         </p>
-
         <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-            <label
-              style={{
-                color: "#71717a",
-                fontSize: "0.6875rem",
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-              }}
-            >
-              Destination
-            </label>
+            <label style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" }}>Destination</label>
             <input
               className="input-noir"
               type="text"
@@ -232,19 +130,8 @@ function ExplorerTab() {
               onKeyDown={(e) => e.key === "Enter" && handleExplore()}
             />
           </div>
-
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            <label
-              style={{
-                color: "#71717a",
-                fontSize: "0.6875rem",
-                fontWeight: 500,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-              }}
-            >
-              Nights
-            </label>
+            <label style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" }}>Nights</label>
             <div style={{ display: "flex", gap: "4px" }}>
               {nightsOptions.map((n) => (
                 <button
@@ -269,72 +156,32 @@ function ExplorerTab() {
               ))}
             </div>
           </div>
-
-          <button
-            className="btn-primary"
-            type="button"
-            onClick={handleExplore}
-            disabled={loading}
-            style={{ flexShrink: 0, height: "42px", alignSelf: "flex-end" }}
-          >
-            {loading ? (
-              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <LoadingSpinner />
-                Loading...
-              </span>
-            ) : (
-              <><MapPin size={15} />Explore</>
-            )}
+          <button className="btn-primary" type="button" onClick={handleExplore} disabled={loading} style={{ flexShrink: 0, height: "42px", alignSelf: "flex-end" }}>
+            {loading ? <><LoadingSpinner />Loading...</> : <><MapPin size={15} />Explore</>}
           </button>
         </div>
       </BentoCard>
 
-      {/* ── Loading Skeleton ───────────────────────────────── */}
-      {loading && !result && (
-        <LoadingSkeleton />
-      )}
+      {loading && !result && <LoadingSkeleton />}
 
-      {/* ── Error ───────────────────────────────────────────── */}
       {error && (
-        <BentoCard>
-          <p style={{ color: "#f87171", fontSize: "0.875rem" }}>{error}</p>
-        </BentoCard>
+        <BentoCard><p style={{ color: "#f87171", fontSize: "0.875rem" }}>{error}</p></BentoCard>
       )}
 
       {/* ── Results ──────────────────────────────────────── */}
       {result && !loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-
-          {/* Summary Bento */}
           <BentoGrid cols={4}>
-            <MetricCard
-              value={result.destination}
-              label="Destination"
-              accent
-            />
-            <MetricCard
-              value={result.itinerary.stay_duration}
-              label="Recommended"
-            />
-            <MetricCard
-              value={result.itinerary.days.length + " days"}
-              label="Stay"
-            />
-            <MetricCard
-              value={result.rv_parks.length}
-              label="RV Parks"
-              badge="Filtered"
-              badgeVariant="success"
-            />
+            <MetricCard value={result.destination} label="Destination" accent />
+            <MetricCard value={result.itinerary.stay_duration} label="Recommended" />
+            <MetricCard value={result.itinerary.days.length + " days"} label="Stay" />
+            <MetricCard value={result.rv_parks.length} label="RV Parks" badge="Filtered" badgeVariant="success" />
           </BentoGrid>
 
-          {/* Itinerary */}
           <div>
-            <p className="label-noir" style={{ marginBottom: "10px" }}>
-              Your Stay Plan
-            </p>
+            <p className="label-noir" style={{ marginBottom: "10px" }}>Your Stay Plan</p>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {result.itinerary.days.map((day, i) => (
+              {result.itinerary.days.map((day: Day, i: number) => (
                 <div key={i} className="animate-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
                   <DayBlock day={day} />
                 </div>
@@ -342,93 +189,153 @@ function ExplorerTab() {
             </div>
           </div>
 
-          {/* RV Parks */}
           {result.rv_parks.length > 0 && (
             <div>
-              <p className="label-noir" style={{ marginBottom: "10px" }}>
-                RV Parks — Big Rig Friendly
-              </p>
+              <p className="label-noir" style={{ marginBottom: "10px" }}>RV Parks — Big Rig Friendly</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {result.rv_parks.map((park, i) => (
+                {result.rv_parks.map((park: RVPark, i: number) => (
                   <RVParkCard key={i} park={park} nights={nights} />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Tips */}
           {result.itinerary.tips && result.itinerary.tips.length > 0 && (
             <BentoCard>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <p className="label-noir">Travel Tips</p>
-                {result.itinerary.tips.map((tip, i) => (
-                  <p
-                    key={i}
-                    style={{
-                      color: "#a1a1aa",
-                      fontSize: "0.875rem",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {tip}
-                  </p>
+                {result.itinerary.tips.map((tip: string, i: number) => (
+                  <p key={i} style={{ color: "#a1a1aa", fontSize: "0.875rem", lineHeight: 1.5 }}>{tip}</p>
                 ))}
               </div>
             </BentoCard>
           )}
 
-          {/* Download */}
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button className="btn-ghost" type="button">
-              <Download size={14} />
-              Download Plan (.md)
+              <Download size={14} />Download Plan (.md)
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Empty State ───────────────────────────────────── */}
+      {!result && !loading && <EmptyState />}
+    </div>
+  );
+}
+
+// ─── Full-Time Tab ────────────────────────────────────────────────
+function FullTimeTab() {
+  const [destination, setDestination] = useState("Sedona, AZ");
+  const [nights] = useState(30); // full month for lifestyle
+  const [result, setResult] = useState<ExploreResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load Sedona full-time data on mount
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchDestination("Sedona", "AZ", 30);
+        setResult(data);
+      } catch {
+        setError("Failed to load lifestyle data");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  async function handleSearch() {
+    if (!destination.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const parts = destination.split(",").map((p) => p.trim());
+      const city = parts[0] || "Sedona";
+      const state = parts[1] || "AZ";
+      const data = await fetchDestination(city, state, 30);
+      setResult(data);
+    } catch {
+      setError("Failed to load lifestyle data");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+
+      {/* ── Location Search ─────────────────────────────── */}
+      <BentoCard hoverLift={false}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+          <div>
+            <p className="label-noir" style={{ marginBottom: "4px" }}>🌎 Full-Time RV Life Analysis</p>
+            <p style={{ color: "#52525b", fontSize: "0.75rem" }}>Operations dashboard for living on the road</p>
+          </div>
+          {result && (
+            <div style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.15)", borderRadius: "9999px", padding: "4px 10px" }}>
+              <span style={{ color: "#4ade80", fontSize: "0.625rem", fontWeight: 600, letterSpacing: "0.06em" }}>● LIVE DATA</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+            <label style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+              Destination
+            </label>
+            <input
+              className="input-noir"
+              type="text"
+              placeholder="City, State (e.g. Sedona, AZ)"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            />
+          </div>
+          <button className="btn-primary" type="button" onClick={handleSearch} disabled={loading} style={{ flexShrink: 0, height: "42px", alignSelf: "flex-end" }}>
+            {loading ? <><LoadingSpinner />Loading...</> : <><LifeBuoy size={15} />Analyze</>}
+          </button>
+        </div>
+
+        {/* Lifestyle categories legend */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #18181b" }}>
+          {[
+            "🌡️ Climate", "💰 Cost", "📶 Connectivity", "🏥 Services",
+            "🐾 Pets", "⛽ Fuel", "🚿 Dump Stations", "📋 State Laws", "🎉 Events",
+          ].map((cat) => (
+            <span key={cat} style={{ color: "#52525b", fontSize: "0.6875rem", background: "#09090b", border: "1px solid #18181b", padding: "3px 8px", borderRadius: "6px" }}>
+              {cat}
+            </span>
+          ))}
+        </div>
+      </BentoCard>
+
+      {loading && !result && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <BentoGrid cols={4}>
+            {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: "88px", borderRadius: "10px" }} />)}
+          </BentoGrid>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            <div className="skeleton" style={{ height: "320px", borderRadius: "10px" }} />
+            <div className="skeleton" style={{ height: "320px", borderRadius: "10px" }} />
+          </div>
+        </div>
+      )}
+
+      {error && <BentoCard><p style={{ color: "#f87171", fontSize: "0.875rem" }}>{error}</p></BentoCard>}
+
+      {result && !loading && <LifestyleDashboard result={result} />}
+
       {!result && !loading && (
         <BentoCard>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-            <div>
-              <p style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: "10px" }}>
-                How it works
-              </p>
-              {[
-                "Enter any US city or destination",
-                "We find top attractions, dining, RV parks",
-                "AI builds a day-by-day itinerary",
-                "Respects your weekday 2-3 hr work window",
-              ].map((step, i) => (
-                <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "8px", alignItems: "flex-start" }}>
-                  <span style={{ color: "#3b82f6", fontSize: "0.75rem", fontWeight: 700, minWidth: "18px" }}>
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span style={{ color: "#a1a1aa", fontSize: "0.875rem", lineHeight: 1.4 }}>{step}</span>
-                </div>
-              ))}
-            </div>
-            <div>
-              <p style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: "10px" }}>
-                Weeknight vs Weekend
-              </p>
-              {[
-                { icon: "📅", label: "Weekdays", desc: "2-3 hrs max (remote work)" },
-                { icon: "🌅", label: "Weekends", desc: "Full exploration days" },
-                { icon: "🏕️", label: "Big Rig", desc: "43ft Brinkley 4100 filtered" },
-                { icon: "🍽", label: "Dining", desc: "Local picks with RV parking" },
-              ].map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "8px", alignItems: "flex-start" }}>
-                  <span style={{ fontSize: "0.875rem" }}>{item.icon}</span>
-                  <div>
-                    <p style={{ color: "#d4d4d8", fontSize: "0.8125rem", fontWeight: 500 }}>{item.label}</p>
-                    <p style={{ color: "#52525b", fontSize: "0.75rem" }}>{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <p style={{ color: "#71717a", fontSize: "0.875rem", textAlign: "center", padding: "24px" }}>
+            Enter a destination above to analyze full-time RV living conditions
+          </p>
         </BentoCard>
       )}
     </div>
@@ -440,58 +347,26 @@ function PlannerTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       <BentoCard>
-        <p className="label-noir" style={{ marginBottom: "14px" }}>
-          Plan a Multi-Day Route
-        </p>
-
-        {/* Route inputs */}
+        <p className="label-noir" style={{ marginBottom: "14px" }}>Plan a Multi-Day Route</p>
         <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", marginBottom: "16px" }}>
           <div style={{ flex: 1 }}>
             <label className="label-noir" style={{ marginBottom: "6px", display: "block" }}>Start</label>
             <input className="input-noir" type="text" placeholder="Bella Vista, AR" />
           </div>
-          <div style={{ display: "flex", alignItems: "center", color: "#3f3f46", padding: "0 4px", paddingBottom: "10px" }}>
-            →
-          </div>
+          <div style={{ display: "flex", alignItems: "center", color: "#3f3f46", padding: "0 4px", paddingBottom: "10px" }}>→</div>
           <div style={{ flex: 1 }}>
             <label className="label-noir" style={{ marginBottom: "6px", display: "block" }}>Destination</label>
             <input className="input-noir" type="text" placeholder="Austin, TX" />
           </div>
           <button className="btn-primary" type="button" style={{ height: "42px", flexShrink: 0 }}>
-            <Compass size={15} />
-            Plan Route
+            <Compass size={15} />Plan Route
           </button>
         </div>
-
-        {/* Vehicle profile */}
-        <details
-          style={{
-            border: "1px solid #27272a",
-            borderRadius: "8px",
-            padding: "14px 16px",
-          }}
-        >
-          <summary
-            style={{
-              color: "#71717a",
-              fontSize: "0.75rem",
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-              cursor: "pointer",
-              userSelect: "none",
-            }}
-          >
+        <details style={{ border: "1px solid #27272a", borderRadius: "8px", padding: "14px 16px" }}>
+          <summary style={{ color: "#71717a", fontSize: "0.75rem", fontWeight: 500, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer", userSelect: "none" }}>
             Vehicle Profile — Brinkley 4100
           </summary>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "12px",
-              marginTop: "14px",
-            }}
-          >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "14px" }}>
             {[
               { label: "Length", value: "43 ft (Fifth Wheel)" },
               { label: "Height", value: '13\' 6"' },
@@ -506,39 +381,32 @@ function PlannerTab() {
           </div>
         </details>
       </BentoCard>
-
-      {/* Placeholder results */}
       <BentoCard>
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "48px 24px",
-            gap: "12px",
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: "12px" }}>
           <Compass size={32} style={{ color: "#27272a" }} />
-          <p style={{ color: "#3f3f46", fontSize: "0.875rem", textAlign: "center" }}>
-            Enter start + destination above to generate route options
-          </p>
+          <p style={{ color: "#3f3f46", fontSize: "0.875rem", textAlign: "center" }}>Enter start + destination above to generate route options</p>
         </div>
       </BentoCard>
     </div>
   );
 }
 
+// ─── Footer ───────────────────────────────────────────────────────
+function Footer() {
+  return (
+    <footer style={{ borderTop: "1px solid #18181b", paddingTop: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+      <p style={{ color: "#3f3f46", fontSize: "0.6875rem" }}>Built for Adler Synod · Brinkley 4100 · Personal Use Only</p>
+      <p style={{ color: "#27272a", fontSize: "0.625rem", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.01em" }}>
+        ADLER NOIR v1.1.0
+      </p>
+    </footer>
+  );
+}
+
 // ─── Loading Spinner ──────────────────────────────────────────────
 function LoadingSpinner() {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      style={{ animation: "spin 1s linear infinite" }}
-    >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       <circle cx="12" cy="12" r="10" stroke="#60a5fa" strokeWidth="3" strokeDasharray="31.4 31.4" />
     </svg>
@@ -551,14 +419,55 @@ function LoadingSkeleton() {
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
       <BentoGrid cols={4}>
         {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="skeleton"
-            style={{ height: "80px", borderRadius: "10px" }}
-          />
+          <div key={i} className="skeleton" style={{ height: "80px", borderRadius: "10px" }} />
         ))}
       </BentoGrid>
       <div className="skeleton" style={{ height: "200px", borderRadius: "10px" }} />
     </div>
+  );
+}
+
+// ─── Empty State ─────────────────────────────────────────────────
+function EmptyState() {
+  return (
+    <BentoCard>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+        <div>
+          <p style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: "10px" }}>
+            How it works
+          </p>
+          {[
+            "Enter any US city or destination",
+            "We find top attractions, dining, RV parks",
+            "AI builds a day-by-day itinerary",
+            "Respects your weekday 2-3 hr work window",
+          ].map((step, i) => (
+            <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "8px", alignItems: "flex-start" }}>
+              <span style={{ color: "#3b82f6", fontSize: "0.75rem", fontWeight: 700, minWidth: "18px" }}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={{ color: "#a1a1aa", fontSize: "0.875rem", lineHeight: 1.4 }}>{step}</span>
+            </div>
+          ))}
+        </div>
+        <div>
+          <p style={{ color: "#71717a", fontSize: "0.6875rem", fontWeight: 500, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: "10px" }}>
+            Weeknight vs Weekend
+          </p>
+          {[
+            { icon: "📅", label: "Weekdays", desc: "2-3 hrs max (remote work)" },
+            { icon: "🌅", label: "Weekends", desc: "Full exploration days" },
+            { icon: "🏕️", label: "Big Rig", desc: "43ft Brinkley 4100 filtered" },
+            { icon: "🍽", label: "Dining", desc: "Local picks with RV parking" },
+          ].map((item, i) => (
+            <div key={i} style={{ display: "flex", gap: "10px", marginBottom: "8px", alignItems: "flex-start" }}>
+              <span style={{ fontSize: "0.875rem" }}>{item.icon}</span>
+              <div>
+                <p style={{ color: "#d4d4d8", fontSize: "0.8125rem", fontWeight: 500 }}>{item.label}</p>
+                <p style={{ color: "#52525b", fontSize: "0.75rem" }}>{item.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </BentoCard>
   );
 }

@@ -35,6 +35,16 @@ export interface RVPark {
   category?: string;
   big_rig_friendly?: boolean;
   url?: string;
+  wifi?: boolean;
+  wifi_strength?: number; // 1-5
+  cell_signal?: {
+    verizon?: number;
+    att?: number;
+    tmobile?: number;
+  };
+  amenities?: string[];
+  pet_policy?: string;
+  distance_to_town?: string;
 }
 
 // ─── Itinerary ───────────────────────────────────────────────────
@@ -72,7 +82,7 @@ export interface Route {
   is_toll?: boolean;
   toll_note?: string;
   warnings?: string[];
-  geometry: [number, number][]; // [lat, lon][]
+  geometry: [number, number][];
 }
 
 // ─── Leg ───────────────────────────────────────────────────────────
@@ -98,77 +108,151 @@ export interface Leg {
   };
 }
 
-// ─── Full-Time RV Lifestyle Data ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// FULL-TIME RV LIFESTYLE DATA MODEL
+// ═══════════════════════════════════════════════════════════════════
 
+// ─── Climate ───────────────────────────────────────────────────────
 export interface MonthlyClimate {
   month: string;
   avg_high_f: number;
   avg_low_f: number;
   rainfall_in: number;
   humidity_pct: number;
-  score: number; // 1-10 RV livability score
+  score: number; // 1-10 RV livability
 }
 
 export interface ClimateData {
-  overall_score: number;
+  overall_score: number; // 1-10
+  summary: string;
   best_months: string[];
   worst_months: string[];
   summer_temps: string;
   winter_temps: string;
+  rainy_season: string;
   monthly: MonthlyClimate[];
 }
 
+// ─── Cost Index ────────────────────────────────────────────────────
 export interface CostIndex {
   overall: number; // 1-10 (10 = cheapest)
-  campground_avg: string; // per night
+  campground_avg: string;
   groceries_idx: number; // vs national avg (100)
-  gas_price: string; // per gallon
-  propane: string; // per gallon
-  overall_monthly: string; // estimated monthly RV total
+  gas_price: string;
+  diesel_price: string;
+  propane: string;
+  entertainment_idx: number;
+  overall_monthly_rv: string;
+  cost_breakdown: {
+    campground: string;
+    fuel: string;
+    groceries: string;
+    entertainment: string;
+    misc: string;
+  };
 }
 
+// ─── Connectivity ──────────────────────────────────────────────────
 export interface ConnectivityScore {
   overall: number; // 1-10
   starlink_rating: number; // 1-5
+  starlink_notes: string;
   verizon_signal: number; // 1-5 bars
   att_signal: number;
   tmobile_signal: number;
-  top_rv_parks_wifi: string[];
+  best_areas: string[];
+  rv_parks_with_fiber: string[];
+  dead_zones: string[];
   notes: string;
 }
+
+// ─── Nearby Services ──────────────────────────────────────────────
+export type ServiceType =
+  | "hospital"
+  | "urgent_care"
+  | "vet"
+  | "propane"
+  | "rv_repair"
+  | "dump_station"
+  | "laundry"
+  | "store"
+  | "pharmacy";
 
 export interface NearbyService {
   name: string;
-  type: "hospital" | "vet" | "propane" | "rv_repair" | "dump_station" | "laundry" | "store";
+  type: ServiceType;
   distance_mi: number;
   address: string;
+  phone?: string;
+  hours?: string;
+  rating?: number | null;
   open_now?: boolean;
+  notes?: string;
 }
 
+// ─── Pet Score ─────────────────────────────────────────────────────
 export interface PetScore {
   overall: number; // 1-10
-  dog_parks_nearby: number;
-  pet_trails: number;
-  vet_available: boolean;
+  dog_friendly_trails: number;
+  dog_parks: number;
+  vet_availability: "excellent" | "good" | "limited" | "none";
   pet_stores: number;
-  notes: string;
+  pet_policy_notes: string;
+  top_dog_spots: string[];
 }
 
+// ─── Fuel Prices ───────────────────────────────────────────────────
 export interface FuelPrice {
   diesel: string;
+  diesel_trend: "↑" | "↓" | "→";
   propane: string;
-  updated: string;
+  updated_date: string;
   cheapest_station: string;
+  cheapest_distance: string;
+  avg_diesel: string;
+  propane_refill: string;
 }
 
+// ─── Community / Events ───────────────────────────────────────────
 export interface CommunityEvent {
   name: string;
   date: string;
   category: string;
+  location: string;
   url: string;
   free: boolean;
+  description?: string;
 }
 
+// ─── State RV Laws ────────────────────────────────────────────────
+export interface RVLaw {
+  category: string;
+  rule: string;
+  severity?: "info" | "warning" | "critical";
+}
+
+export interface StateRVLaws {
+  state: string;
+  max_rv_length: string;
+  weight_limits: string;
+  axle_requirements: string;
+  pet_rules: string;
+  burn_ban_status: string;
+  notable_restrictions: RVLaw[];
+  rv_friendly_highways: string[];
+}
+
+// ─── Dump Station ──────────────────────────────────────────────────
+export interface DumpStation {
+  name: string;
+  type: "free" | "paid" | "campground_only";
+  price?: string;
+  distance_mi: number;
+  address: string;
+  notes?: string;
+}
+
+// ─── FULL-TIME RV LIFE ────────────────────────────────────────────
 export interface RVLifestyleData {
   climate: ClimateData;
   cost: CostIndex;
@@ -177,4 +261,16 @@ export interface RVLifestyleData {
   pet_score: PetScore;
   fuel: FuelPrice;
   community_events: CommunityEvent[];
+  state_laws: StateRVLaws;
+  dump_stations: DumpStation[];
+}
+
+// ─── Master Explore Result ─────────────────────────────────────────
+export interface ExploreResult {
+  destination: string;
+  attractions: Attraction[];
+  restaurants: Restaurant[];
+  rv_parks: RVPark[];
+  itinerary: StayPlan;
+  lifestyle?: RVLifestyleData; // populated when full-time mode enabled
 }
