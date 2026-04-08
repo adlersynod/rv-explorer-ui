@@ -85,6 +85,45 @@ export interface Route {
   geometry: [number, number][];
 }
 
+// ─── 7-day Weather Forecast ────────────────────────────────────────
+export interface DayForecast {
+  date: string;
+  day_name: string;
+  high_f: number;
+  low_f: number;
+  precipitation_pct: number;
+  condition: string;
+}
+
+export interface ForecastData {
+  location: string;
+  days: DayForecast[];
+  source: string;
+}
+
+// ─── Live Fuel Prices ───────────────────────────────────────────────
+export interface FuelPrices {
+  diesel: string;
+  diesel_trend: "↑" | "↓" | "→";
+  regular: string;
+  midgrade: string;
+  premium: string;
+  avg_diesel_national: string;
+  updated: string;
+  source: string;
+}
+
+// ─── Saved Trip ───────────────────────────────────────────────────
+export interface SavedTrip {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  nights: number;
+  date_saved: string;
+  result: ExploreResult;
+}
+
 // ─── Leg ───────────────────────────────────────────────────────────
 export interface Leg {
   leg_index: number;
