@@ -23,10 +23,16 @@ import type {
   RVLifestyleData,
   MonthlyClimate,
   ExploreResult,
+  ForecastData,
+  DayForecast,
+  FuelPrices,
+  Route,
+  SavedTrip,
 } from "./types";
 
 // Re-export for consumers that import from realData
 export type { ExploreResult };
+export const fetchDestination = fetchFromFreeAPIs;
 
 // ─── CORS proxy ────────────────────────────────────────────────────
 const PROXY = "https://api.allorigins.win/raw?url=";
@@ -640,6 +646,257 @@ function getStateCost(state: string): Omit<CostIndex, "overall_monthly_rv" | "co
 
 // ─── In-memory cache (10 min TTL) ────────────────────────────────
 const _cache = new Map<string, ExploreResult>();
+
+// ─── 7-Day Weather Forecast (Open-Meteo) ──────────────────────────
+export async function fetchForecast(city: string, lat: number, lon: number): Promise<ForecastData> {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&forecast_days=7&timezone=America/Denver&temperature_unit=fahrenheit`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error("Forecast fetch failed");
+    const d = await res.json() as any;
+    const days = d.daily;
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const conditionMap: Record<number, string> = {
+      0: "☀️ Clear", 1: "🌤️ Mostly Clear", 2: "⛅ Partly Cloudy", 3: "☁️ Overcast",
+      45: "🌫️ Foggy", 48: "🌫️ Rime Fog",
+      51: "🌦️ Light Drizzle", 53: "🌦️ Drizzle", 55: "🌧️ Heavy Drizzle",
+      61: "🌧️ Light Rain", 63: "🌧️ Rain", 65: "🌧️ Heavy Rain",
+      71: "🌨️ Light Snow", 73: "🌨️ Snow", 75: "🌨️ Heavy Snow",
+      80: "🌦️ Rain Showers", 81: "🌧️ Moderate Showers", 82: "⛈️ Violent Showers",
+      95: "⛈️ Thunderstorm", 96: "⛈️ Thunderstorm + Hail",
+    };
+    const result: DayForecast[] = [];
+    for (let i = 0; i < Math.min(7, days.time.length); i++) {
+      const date = new Date(days.time[i] + "T12:00:00");
+      const dayName = i === 0 ? "Today" : i === 1 ? "Tomorrow" : dayNames[date.getDay()];
+      result.push({
+        date: days.time[i],
+        day_name: dayName,
+        high_f: Math.round(days.temperature_2m_max[i]),
+        low_f: Math.round(days.temperature_2m_min[i]),
+        precipitation_pct: days.precipitation_probability_max?.[i] ?? 0,
+        condition: conditionMap[days.weathercode?.[i]] || "🌤️ Variable",
+      });
+    }
+    return { location: city, days: result, source: "Open-Meteo" };
+  } catch {
+    return { location: city, days: [], source: "Unavailable" };
+  }
+}
+
+// ─── Live Fuel Prices (FuelEconomy.gov) ──────────────────────────
+export async function fetchFuelPrices(): Promise<FuelPrices> {
+  try {
+    const url = "https://www.fueleconomy.gov/ws/rest/fuelprices";
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) throw new Error("Fuel prices fetch failed");
+    const text = await res.text();
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(text, "text/xml");
+    const get = (tag: string) => xml.getElementsByTagName(tag)?.[0]?.textContent || "N/A";
+    const diesel = parseFloat(get("diesel"));
+    const nationalDiesel = parseFloat(get("diesel"));
+    const trend: "↑" | "↓" | "→" = nationalDiesel > 3.8 ? "↑" : nationalDiesel < 3.5 ? "↓" : "→";
+    return {
+      diesel: `$${diesel.toFixed(2)}`,
+      diesel_trend: trend,
+      regular: `$${parseFloat(get("regular")).toFixed(2)}`,
+      midgrade: `$${parseFloat(get("midgrade")).toFixed(2)}`,
+      premium: `$${parseFloat(get("premium")).toFixed(2)}`,
+      avg_diesel_national: `$${nationalDiesel.toFixed(2)}`,
+      updated: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      source: "EPA / FuelEconomy.gov",
+    };
+  } catch {
+    return {
+      diesel: "$3.89",
+      diesel_trend: "→",
+      regular: "$3.29",
+      midgrade: "$3.59",
+      premium: "$3.99",
+      avg_diesel_national: "$3.79",
+      updated: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      source: "Estimated",
+    };
+  }
+}
+
+// ─── OSRM Routing ─────────────────────────────────────────────────
+export async function fetchOSRMRoute(
+  start: string, end: string, startCoords: [number, number], endCoords: [number, number]
+): Promise<{ routes: Route[]; startCity: string; endCity: string }> {
+  const [slon, slat] = startCoords;
+  const [elon, elat] = endCoords;
+  const url = `https://router.project-osrm.org/route/v1/car/${slon},${slat};${elon},${elat}?overview=full&geometries=geojson&steps=false`;
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error("OSRM request failed");
+    const data = await res.json() as any;
+    if (data.code !== "Ok" || !data.routes?.length) throw new Error("No routes found");
+
+    const route = data.routes[0];
+    const distance_mi = Math.round(route.distance / 1609.34);
+    const duration_h = Math.round(route.duration / 36) / 100; // hours
+    const coords: [number, number][] = route.geometry.coordinates.map((c: number[]) => [c[0], c[1]] as [number, number]);
+
+    // Build 3 route variants from one geometry (OSRM provides only one)
+    // We simulate Scenic (+15% distance, +25% time) and Alternate (+8% distance, +10% time)
+    const primary: Route = {
+      id: "route-0",
+      name: "Primary",
+      distance_mi,
+      duration_h: Math.round(duration_h * 10) / 10,
+      score: 9,
+      is_toll: false,
+      warnings: buildRouteWarnings(distance_mi, duration_h),
+      geometry: coords,
+    };
+
+    const scenic: Route = {
+      id: "route-1",
+      name: "Scenic",
+      distance_mi: Math.round(distance_mi * 1.15),
+      duration_h: Math.round(duration_h * 1.25 * 10) / 10,
+      score: 7,
+      is_toll: false,
+      warnings: [
+        ...buildRouteWarnings(Math.round(distance_mi * 1.15), Math.round(duration_h * 1.25 * 10) / 10),
+        "Scenic route adds ~15% more driving via state highways",
+      ],
+      geometry: [],
+    };
+
+    const alternate: Route = {
+      id: "route-2",
+      name: "Alternate",
+      distance_mi: Math.round(distance_mi * 1.08),
+      duration_h: Math.round(duration_h * 1.10 * 10) / 10,
+      score: 8,
+      is_toll: distance_mi > 500,
+      toll_note: distance_mi > 500 ? "Check turnpike costs for long-haul sections" : undefined,
+      warnings: buildRouteWarnings(Math.round(distance_mi * 1.08), Math.round(duration_h * 1.10 * 10) / 10),
+      geometry: [],
+    };
+
+    return { routes: [primary, scenic, alternate], startCity: start, endCity: end };
+  } catch {
+    // Return mock routes as fallback
+    const primary: Route = {
+      id: "route-0",
+      name: "Primary",
+      distance_mi: 0,
+      duration_h: 0,
+      score: 7,
+      warnings: [],
+      geometry: [],
+    };
+    return { routes: [primary, { ...primary, id: "route-1", name: "Scenic", score: 6 }, { ...primary, id: "route-2", name: "Alternate", score: 7 }], startCity: start, endCity: end };
+  }
+}
+
+function buildRouteWarnings(distance_mi: number, duration_h: number): string[] {
+  const warnings: string[] = [];
+  if (duration_h > 8) warnings.push("Long drive — plan rest stops every 2 hours");
+  if (distance_mi > 400) warnings.push("Consider overnight at a truck stop for safety");
+  return warnings;
+}
+
+// ─── Saved Trips (localStorage) ───────────────────────────────────
+const TRIPS_KEY = "rv_explorer_saved_trips";
+const MAX_SAVED = 20;
+
+export function loadSavedTrips(): SavedTrip[] {
+  try {
+    const raw = localStorage.getItem(TRIPS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as SavedTrip[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveTrip(trip: Omit<SavedTrip, "id" | "date_saved">): void {
+  const trips = loadSavedTrips();
+  const newTrip: SavedTrip = {
+    ...trip,
+    id: crypto.randomUUID(),
+    date_saved: new Date().toISOString().split("T")[0],
+  };
+  trips.unshift(newTrip);
+  if (trips.length > MAX_SAVED) trips.splice(MAX_SAVED);
+  localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
+}
+
+export function deleteTrip(id: string): void {
+  const trips = loadSavedTrips().filter(t => t.id !== id);
+  localStorage.setItem(TRIPS_KEY, JSON.stringify(trips));
+}
+
+export function clearAllTrips(): void {
+  localStorage.removeItem(TRIPS_KEY);
+}
+
+// ─── GPX Export ───────────────────────────────────────────────────
+export function generateGPX(route: Route, startCity: string, endCity: string): string {
+  const waypoints = route.geometry.length > 0
+    ? route.geometry.map(([lon, lat]) => `    <trkpt lat="${lat}" lon="${lon}"></trkpt>`).join("\n")
+    : `    <!-- No geometry available for ${route.name} route -->`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RV Explorer — Adler Noir" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${startCity} to ${endCity} — ${route.name} Route</name>
+    <desc>Distance: ${route.distance_mi} mi | Duration: ${formatH(route.duration_h)} | Score: ${route.score}/10</desc>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+  <trk>
+    <name>${route.name} Route</name>
+    <type>RV Trip</type>
+    <trkseg>
+${waypoints}
+    </trkseg>
+  </trk>
+  <wpt lat="0" lon="0"><name>Start: ${startCity}</name></wpt>
+  <wpt lat="0" lon="0"><name>End: ${endCity}</name></wpt>
+</gpx>`;
+}
+
+function formatH(h: number): string {
+  const whole = Math.floor(h);
+  const mins = Math.round((h - whole) * 60);
+  return mins === 0 ? `${whole}h` : `${whole}h ${mins}m`;
+}
+
+// ─── PDF Generation (using browser print) ───────────────────────
+export function downloadAsPDF(elementId: string, filename: string): void {
+  const el = document.getElementById(elementId);
+  if (!el) {
+    // Fallback: open print dialog for full page
+    window.print();
+    return;
+  }
+  // Use html2canvas if available, otherwise fallback to print
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+  script.onload = () => {
+    const html2canvas = (window as any).html2canvas;
+    if (html2canvas) {
+      html2canvas(el, { backgroundColor: "#000000", scale: 1.5 }).then((canvas: HTMLCanvasElement) => {
+        const link = document.createElement("a");
+        link.download = filename + ".png";
+        link.href = canvas.toDataURL("image/png");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+    } else {
+      window.print();
+    }
+  };
+  script.onerror = () => window.print();
+  document.head.appendChild(script);
+}
 
 export async function fetchFromFreeAPIs(
   city: string,
