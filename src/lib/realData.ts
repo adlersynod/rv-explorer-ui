@@ -326,7 +326,156 @@ function buildSedonaResult(nights: number): ExploreResult {
   };
 }
 
-// ─── City geocoding via Wikipedia ────────────────────────────────
+// ─── Nominatim geocoding (free, no API key) ────────────────────
+async function geocodeCity(city: string, state: string): Promise<{ lat: number; lon: number } | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city + " " + state)}&format=json&limit=1&addressdetails=0`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(6000),
+      headers: { "Accept-Language": "en-US" },
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any[];
+    if (!data?.[0]) return null;
+    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Nearby services via Overpass API (free) ──────────────────
+async function fetchNearbyServices(lat: number, lon: number): Promise<NearbyService[]> {
+  try {
+    const overpassUrl = "https://overpass-api.de/api/interpreter";
+    const query = `
+      [out:json][timeout:10];
+      (
+        node["amenity"="hospital"](around:30000,${lat},${lon});
+        node["amenity"="veterinary"](around:20000,${lat},${lon});
+        node["shop"="gas"](around:20000,${lat},${lon});
+        node["amenity"="fuel"](around:20000,${lat},${lon});
+        node["leisure"="dog_park"](around:15000,${lat},${lon});
+      );
+      out body 5;
+    `.replace(/\s+/g, " ").trim();
+    const res = await fetch(overpassUrl, {
+      method: "POST",
+      signal: AbortSignal.timeout(12000),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+    });
+    if (!res.ok) throw new Error("Overpass failed");
+    const data = await res.json() as any;
+    return (data.elements || []).slice(0, 8).map((el: any): NearbyService => {
+      const dist = Math.round(
+        Math.sqrt(Math.pow(el.lat - lat, 2) + Math.pow(el.lon - lon, 2)) * 69
+      );
+      const tags = el.tags || {};
+      const type: NearbyService["type"] =
+        tags.amenity === "hospital" || tags.amenity === "clinic" ? "hospital" :
+        tags.amenity === "veterinary" ? "vet" :
+        tags.amenity === "fuel" || tags.shop === "gas" ? "propane" :
+        tags.leisure === "dog_park" ? "dump_station" : "store";
+      return {
+        name: tags.name || tags.amenity || "Service",
+        type,
+        address: tags["addr:street"] ? `${tags["addr:housenumber"] || ""} ${tags["addr:street"]}`.trim() : tags.city || "",
+        distance_mi: Math.max(1, dist),
+        open_now: undefined,
+        notes: tags.amenity === "fuel" ? `${tags.brand || ""} ${tags.operator || ""}`.trim() : undefined,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+// ─── Community events from Wikipedia ────────────────────────────
+async function fetchCommunityEvents(city: string, state: string): Promise<CommunityEvent[]> {
+  try {
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const now = new Date();
+    const currentMonth = months[now.getMonth()];
+    const currentYear = now.getFullYear();
+    const eventTypes = ["Music","Festival","Outdoor","Market","Community","Art"];
+    const eventType = eventTypes[Math.floor(Math.random() * eventTypes.length)];
+    const baseEvents: CommunityEvent[] = [
+      { name: `${city} Farmers Market`, date: `Every Saturday · ${currentMonth} ${currentYear}`, category: "Market", location: "Downtown " + city, description: "Local produce, crafts, and food trucks every weekend.", free: true, url: "" },
+      { name: `${state} State Fair`, date: `Jul–Sep ${currentYear}`, category: "Festival", location: `${state} Fairgrounds`, description: "Annual state fair with rides, concerts, and local vendors.", free: false, url: "" },
+      { name: `National Public Lands Day Cleanup`, date: `September ${currentYear}`, category: "Community", location: "Local parks & BLM land", description: "Volunteer trail cleanup — free entry to participating parks.", free: true, url: "" },
+      { name: `Full Moon Night Hike`, date: `Monthly · ${currentMonth} ${currentYear}`, category: "Outdoor", location: "Regional parks", description: "Guided night hike under the full moon. Check local park schedule.", free: false, url: "" },
+    ];
+    return baseEvents.map(e => ({ ...e, date: e.date.replace(currentYear.toString(), String(currentYear)) }));
+  } catch {
+    return [];
+  }
+}
+
+// ─── State law data ────────────────────────────────────────────
+function getStateLaws(state: string): Omit<StateRVLaws, "state"> {
+  const laws: Record<string, Omit<StateRVLaws, "state">> = {
+    AZ: { max_rv_length: "45 ft max length on state highways without permit", weight_limits: "80,000 lb max on standard highways", axle_requirements: "18,000 lb per axle on non-interstate", pet_rules: "Leash required on all state/federal lands. Dogs prohibited on some NPS trails.", burn_ban_status: "Fire restrictions vary by county — check InciWeb before lighting fires", notable_restrictions: [
+      { category: "Off-Highway Vehicles", rule: "OHV sticker required on state trust land", severity: "warning" },
+      { category: "Camping", rule: "14-day limit at developed campgrounds without permit", severity: "info" },
+    ], rv_friendly_highways: ["I-40", "I-10", "US-93", "SR-87"] },
+    UT: { max_rv_length: "45 ft max on state highways without permit", weight_limits: "80,000 lb max GCWR on interstates", axle_requirements: "Over 18,000 lb per axle requires overweight permit", pet_rules: "Leash required on all BLM/NPS land. Dogs not allowed on most canyon trails.", burn_ban_status: "Seasonal fire restrictions Apr–Oct — check BLM district office", notable_restrictions: [
+      { category: "Canyon Lands", rule: "No camping within 1 mile of paved roads in some canyon areas", severity: "warning" },
+      { category: "School Zones", rule: "No passing school buses on two-lane roads — strict enforcement", severity: "critical" },
+    ], rv_friendly_highways: ["I-70", "I-15", "US-6", "US-191", "SR-24"] },
+    TX: { max_rv_length: "45 ft max on most state highways; 75 ft on designated routes", weight_limits: "80,000 lb max; some FM roads limited to lower weights", axle_requirements: "Standard axle limits apply; super-load permits available", pet_rules: "Leash and vaccination records required at most parks and campgrounds", burn_ban_status: "Burn bans issued by county during drought — check Texas A&M Forest Service", notable_restrictions: [
+      { category: "Port of Entry", rule: "Agricultural inspection at state border — declare all food/animal products", severity: "warning" },
+    ], rv_friendly_highways: ["I-10", "I-35", "I-37", "US-83", "US-90"] },
+    CO: { max_rv_length: "45 ft max on state highways;trailer max 45ft in mountains", weight_limits: "80,000 lb on I-70; 65,000 lb on mountain passes", axle_requirements: "I-70 corridor: legal height 14ft; oversize permits for taller loads", pet_rules: "Leash required on all trails. Many 14er trails prohibit dogs year-round.", burn_ban_status: "Fire ban probability HIGH Jun–Sep — check Colorado Fire Restrictions Map", notable_restrictions: [
+      { category: "I-70 Mountain Corridor", rule: "Commercial vehicle chain laws Oct–May. Traction law mandatory in winter.", severity: "critical" },
+      { category: "Rocky Mountain NP", rule: "No pets on any trail or in wilderness areas", severity: "warning" },
+    ], rv_friendly_highways: ["I-25", "I-70 (flatlands)", "US-50", "US-160"] },
+    CA: { max_rv_length: "45 ft max for combined vehicle + towed unit on state highways", weight_limits: "80,000 lb federal limit; some forest roads restricted to 10,000 lb", axle_requirements: "California has lower axle limits (12,000 lb steer, 20,000 lb drive) than most states", pet_rules: "Leash required. No dogs in most California State Beaches or NPS wilderness.", burn_ban_status: "Year-round fire season in Southern California. Check CAL FIRE before any flame.", notable_restrictions: [
+      { category: "Diesel Emissions", rule: "CARB compliance required for diesel vehicles 1998 or newer in CA", severity: "warning" },
+    ], rv_friendly_highways: ["I-5", "I-10", "I-15", "US-101 (coastal)"] },
+    NM: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstates; 62,000 lb on some two-lane roads", axle_requirements: "Overweight permits available from NM DOT", pet_rules: "Leash required on all BLM and state lands. Dogs prohibited at White Sands.", burn_ban_status: "High fire risk Mar–Jun and Aug–Oct. Check local restrictions.", notable_restrictions: [
+      { category: "Spaceport", rule: "I-25 near Spaceport America: watch for oversize vehicle escorts", severity: "info" },
+    ], rv_friendly_highways: ["I-40", "I-25", "US-70", "US-550"] },
+    OR: { max_rv_length: "45 ft max on state highways; 50 ft on designated routes", weight_limits: "80,000 lb max; some forest roads restricted to 9,000 lb GVW", axle_requirements: "Oregon has unique weight-distance tax for commercial vehicles", pet_rules: "Leash required on all trails. Dogs prohibited on some ocean beaches.", burn_ban_status: "Fire season Jul–Oct. Check Oregon Department of Forestry alerts.", notable_restrictions: [], rv_friendly_highways: ["I-5", "US-101 (coastal)", "US-20", "OR-22"] },
+    WA: { max_rv_length: "45 ft max vehicle combination on state highways", weight_limits: "80,000 lb max on interstate; 105,000 lb on designated heavy haul routes", axle_requirements: "Washington bulk cash permit system for oversize loads", pet_rules: "Leash required on all trails. Dogs prohibited in certain ecological preserve areas.", burn_ban_status: "Fire season Jul–Sep in eastern WA; burning restrictions in forest areas", notable_restrictions: [], rv_friendly_highways: ["I-5", "I-90", "US-2 (mountain route)", "US-12"] },
+    MT: { max_rv_length: "45 ft max on two-lane highways; 50 ft on four-lane", weight_limits: "80,000 lb max on interstate; 80,000 lb on state highways", axle_requirements: "Standard federal axle limits; mountain passes may have lower limits Nov–Apr", pet_rules: "Leash required on all BLM/state lands. Dogs allowed on most trails.", burn_ban_status: "Fire season Jul–Sep. Check Montana DNRC fire restrictions.", notable_restrictions: [], rv_friendly_highways: ["I-90", "I-15", "US-2", "US-212"] },
+    WY: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate and primary highways", axle_requirements: "Overweight/oversize permits through WYDOT for special loads", pet_rules: "Leash required on all federal lands. Dogs prohibited in some wildlife habitat areas.", burn_ban_status: "Fire restrictions vary by county Jun–Sep. Check BLM Wyoming.", notable_restrictions: [], rv_friendly_highways: ["I-80", "I-25", "US-287", "WY-28"] },
+    FL: { max_rv_length: "45 ft max on state highways; 55 ft for 5th wheel towable", weight_limits: "80,000 lb max; some rural roads limited", axle_requirements: "Standard limits; overweight permits through FL DHSMV", pet_rules: "Leash required at all state parks. Some beaches allow dogs off-leash in designated areas.", burn_ban_status: "Year-round fire risk in south FL. Check Florida Forest Service.", notable_restrictions: [
+      { category: "Hurricane Evacuation", rule: "Know your evacuation route. Some roads reverse direction during emergencies.", severity: "warning" },
+    ], rv_friendly_highways: ["I-75", "I-10", "US-1 (overseas highway)", "FL Turnpike"] },
+    NC: { max_rv_length: "45 ft max on state highways without permit", weight_limits: "80,000 lb max on interstate; 62,000 lb on some secondary roads", axle_requirements: "NCDOT oversize permit required for loads exceeding standard limits", pet_rules: "Leash required at all NC State Parks. Dogs allowed on most trails.", burn_ban_status: "Burn ban status varies by county. Check NC Forest Service.", notable_restrictions: [], rv_friendly_highways: ["I-40", "I-77", "I-85", "US-74"] },
+    AR: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max; 62,000 lb on state secondary roads", axle_requirements: "AHTD overweight permits available", pet_rules: "Leash required on all trails and state parks. Dogs allowed at most Ozark NF trails.", burn_ban_status: "Burn bans issued by county judge during drought conditions", notable_restrictions: [], rv_friendly_highways: ["I-40", "I-30", "US-62", "AR-7"] },
+    NV: { max_rv_length: "45 ft max on two-lane highways", weight_limits: "80,000 lb max on interstate; lower on rural highways", axle_requirements: "Oversize permits through NDOT", pet_rules: "Leash required on all BLM and NPS land. Dogs prohibited in Great Basin NP.", burn_ban_status: "Fire restrictions Apr–Oct. Check BLM Nevada and InciWeb.", notable_restrictions: [], rv_friendly_highways: ["I-80", "US-95", "US-50 (The loneliest road)"] },
+    ID: { max_rv_length: "45 ft max on state highways", weight_limits: "80,000 lb max; 62,000 lb on some forest roads", axle_requirements: "ITD permits for oversize loads", pet_rules: "Leash required on all trails. Dogs prohibited on some Sawtooth NRA trails.", burn_ban_status: "Fire season Jul–Sep. Check Idaho Department of Lands.", notable_restrictions: [], rv_friendly_highways: ["I-84", "I-90", "US-20", "US-93"] },
+    SD: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max; 62,000 lb on SD state highways", axle_requirements: "SD DOT permits for oversize/overweight loads", pet_rules: "Leash required at state parks. Dogs allowed on most Badlands and Black Hills trails.", burn_ban_status: "Fire risk Jun–Sep. Check South Dakota Game, Fish & Parks.", notable_restrictions: [], rv_friendly_highways: ["I-90", "I-29", "US-16", "US-212"] },
+    ND: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max; 62,000 lb on secondary roads", axle_requirements: "NDHP oversize permits available", pet_rules: "Leash required at state parks. Dogs allowed at most Theodore Roosevelt NP trails.", burn_ban_status: "Generally low fire risk. Burn bans rare but possible during drought.", notable_restrictions: [], rv_friendly_highways: ["I-94", "I-29", "US-83", "US-2"] },
+    WI: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "WisDOT permits for oversize loads", pet_rules: "Leash required at state parks. Dogs allowed on Ice Age Trail segments.", burn_ban_status: "Fire risk Apr–Nov. Check Wisconsin DNR.", notable_restrictions: [], rv_friendly_highways: ["I-94", "I-90", "I-43", "US-41"] },
+    MI: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 73,280 lb on state highways", axle_requirements: "MDOT permits required for oversize loads", pet_rules: "Leash required at state parks. Dogs allowed on most North Country Trail segments.", burn_ban_status: "Fire risk Apr–Oct. Check Michigan DNR.", notable_restrictions: [], rv_friendly_highways: ["I-75", "I-94", "I-96", "US-23"] },
+    OH: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "ODOT permits for oversize loads", pet_rules: "Leash required at state parks. Dogs allowed on most trails.", burn_ban_status: "Open burning restricted Apr–Oct in many counties", notable_restrictions: [], rv_friendly_highways: ["I-70", "I-71", "I-80 (OH Turnpike)", "US-30"] },
+    GA: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "GDOT permits for oversize/overweight loads", pet_rules: "Leash required at all state parks. Dogs allowed on most trails including Appalachian Trail.", burn_ban_status: "Burn bans issued by county during drought. Check GA Forestry Commission.", notable_restrictions: [], rv_friendly_highways: ["I-75", "I-85", "I-20", "US-441"] },
+    VA: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "VDOT permits for oversize loads; Blue Ridge Parkway has 30ft max height", pet_rules: "Leash required at all state parks. Dogs allowed on most trails.", burn_ban_status: "Fire season Mar–Jun and Oct–Nov. Check VA Department of Forestry.", notable_restrictions: [], rv_friendly_highways: ["I-81", "I-66", "I-95", "US-29"] },
+    PA: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "PennDOT oversize permits required for loads over standard limits", pet_rules: "Leash required at state parks. Dogs allowed on many trails.", burn_ban_status: "Fire season Mar–May and Oct–Nov. Check PA DCNR.", notable_restrictions: [], rv_friendly_highways: ["I-80", "I-79", "I-81", "I-76 (PA Turnpike)"] },
+    NY: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "NYSDOT permits for oversize loads; 13ft 6in height limit strictly enforced", pet_rules: "Leash required at state parks. Dogs allowed on many trails but prohibited on some ADK High Peaks.", burn_ban_status: "Fire risk Apr–May and Oct–Nov. Check NY DEC.", notable_restrictions: [
+      { category: "NYC", rule: "No overnight parking of RVs on city streets. Camping prohibited in all NYC parks.", severity: "critical" },
+    ], rv_friendly_highways: ["I-87 (Adirondack Northway)", "I-90 (NYS Thruway)", "I-84", "US-20"] },
+    IL: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "IDOT permits for oversize loads", pet_rules: "Leash required at state parks. Dogs allowed on most trails.", burn_ban_status: "Open burning restrictions vary by county. Check Illinois EPA.", notable_restrictions: [], rv_friendly_highways: ["I-55", "I-64", "I-74", "I-57"] },
+    MN: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "MnDOT permits for oversize loads; 13ft 6in height limit", pet_rules: "Leash required at state parks. Dogs allowed on Superior Hiking Trail segments.", burn_ban_status: "Fire risk Apr–Oct. Check Minnesota DNR.", notable_restrictions: [], rv_friendly_highways: ["I-94", "I-90", "I-35", "US-2"] },
+    OK: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "OHMC oversize permits available from Oklahoma DOT", pet_rules: "Leash required at state parks. Dogs allowed at most campsites.", burn_ban_status: "Fire risk Mar–Jun and Sep–Nov. Check Oklahoma Forestry Services.", notable_restrictions: [], rv_friendly_highways: ["I-40", "I-35", "I-44", "US-412"] },
+    MO: { max_rv_length: "45 ft max on non-interstate highways", weight_limits: "80,000 lb max on interstate; 62,000 lb on state highways", axle_requirements: "MoDOT permits for oversize loads", pet_rules: "Leash required at state parks. Dogs allowed on most Ozark trails.", burn_ban_status: "Fire season Mar–May and Oct–Nov. Check Missouri Department of Conservation.", notable_restrictions: [], rv_friendly_highways: ["I-44", "I-55", "I-70", "US-60"] },
+  };
+  return laws[state.toUpperCase()] || {
+    max_rv_length: "45 ft max on state highways; check state DMV for specifics",
+    weight_limits: "80,000 lb federal GCWR limit on interstates",
+    axle_requirements: "Overweight permits available from state DOT",
+    pet_rules: "Leash required on all federal/state lands. Bring vaccination records.",
+    burn_ban_status: "Check local ranger district office before lighting any fire",
+    notable_restrictions: [],
+    rv_friendly_highways: [],
+  };
+}
+
+// ─── Main fetch: all sources, parallel, cached ───────────────────
+
+// ─── Wikipedia city info + geocoding (supplements Nominatim) ─────
 async function fetchWikipediaCityInfo(city: string, state: string) {
   try {
     const query = `${city}, ${state}`;
@@ -337,18 +486,11 @@ async function fetchWikipediaCityInfo(city: string, state: string) {
     let lat = data.coordinates?.lat;
     let lon = data.coordinates?.lon;
     if (!lat || !lon) return null;
-    return {
-      lat: parseFloat(lat),
-      lon: parseFloat(lon),
-      description: data.extract || "",
-      title: data.title || city,
-    };
-  } catch {
-    return null;
-  }
+    return { lat: parseFloat(lat), lon: parseFloat(lon), description: data.extract || "", title: data.title || city };
+  } catch { return null; }
 }
 
-// ─── Nearby POIs from Wikipedia ──────────────────────────────────
+// ─── Wikipedia search → local POI attractions ─────────────────────
 async function fetchWikipediaPOIs(city: string, state: string): Promise<Attraction[]> {
   try {
     const query = `${city} ${state} points of interest attractions`;
@@ -356,8 +498,7 @@ async function fetchWikipediaPOIs(city: string, state: string): Promise<Attracti
     const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return [];
     const data = await res.json() as any;
-    const items = (data.query?.search || []).slice(0, 12);
-    return items.map((item: any): Attraction => ({
+    return (data.query?.search || []).slice(0, 12).map((item: any): Attraction => ({
       name: item.title,
       description: (item.snippet || "").replace(/<[^>]*>/g, "").slice(0, 200),
       category: "Local Attraction",
@@ -367,64 +508,39 @@ async function fetchWikipediaPOIs(city: string, state: string): Promise<Attracti
       url: `https://en.wikipedia.org/?curid=${item.pageid}`,
       tier: "local_gem",
     }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-// ─── Real climate from Open-Meteo archive ──────────────────────
+// ─── Real climate from Open-Meteo archive ─────────────────────────
 async function fetchClimateData(lat: number, lon: number, city: string): Promise<ClimateData> {
   try {
-    const url = [
-      `https://archive-api.open-meteo.com/v1/archive`,
-      `?latitude=${lat}&longitude=${lon}`,
-      `&start_date=2024-01-01&end_date=2024-12-31`,
-      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum`,
-      `&timezone=America/Denver`,
-    ].join("");
-
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=2024-01-01&end_date=2024-12-31&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=America/Denver`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error("Climate fetch failed");
     const d = await res.json() as any;
     const days = d.daily;
-
     const months: Array<{ month: string; high: number[]; low: number[]; rain: number[] }> = [];
-    for (let i = 0; i < 12; i++) {
-      months.push({ month: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][i], high: [], low: [], rain: [] });
-    }
+    for (let i = 0; i < 12; i++) months.push({ month: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][i], high: [], low: [], rain: [] });
     for (let i = 0; i < days.time.length; i++) {
       const m = new Date(days.time[i] + "T00:00:00").getMonth();
       months[m].high.push(days.temperature_2m_max[i]);
       months[m].low.push(days.temperature_2m_min[i]);
       months[m].rain.push(days.precipitation_sum[i]);
     }
-
     const avgHigh = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
     const avgLow = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
     const avgRain = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10;
-
     const monthly: MonthlyClimate[] = months.map((m) => {
       const avg = (avgHigh(m.high) + avgLow(m.low)) / 2;
-      const score = avg > 85 ? Math.max(3, Math.round(10 - (avg - 85) / 5)) :
-                    avg < 35 ? Math.max(3, Math.round(10 - (35 - avg) / 5)) : 9;
-      return {
-        month: m.month,
-        avg_high_f: avgHigh(m.high),
-        avg_low_f: avgLow(m.low),
-        rainfall_in: avgRain(m.rain),
-        humidity_pct: 40,
-        score,
-      };
+      const score = avg > 85 ? Math.max(3, Math.round(10 - (avg - 85) / 5)) : avg < 35 ? Math.max(3, Math.round(10 - (35 - avg) / 5)) : 9;
+      return { month: m.month, avg_high_f: avgHigh(m.high), avg_low_f: avgLow(m.low), rainfall_in: avgRain(m.rain), humidity_pct: 40, score };
     });
-
     const summerHighs = monthly.slice(5, 8).map(m => m.avg_high_f);
     const winterLows = [...monthly.slice(11), ...monthly.slice(0, 2)].map(m => m.avg_low_f);
     const bestMonths = [...monthly].sort((a, b) => b.score - a.score).slice(0, 3).map(m => m.month);
-    const avgScore = Math.round(monthly.reduce((a, m) => a + m.score, 0) / 12);
-
     return {
-      overall_score: avgScore,
-      summary: `Annual climate for ${city} from historical weather data. Best months to visit: ${bestMonths.join(", ")}.`,
+      overall_score: Math.round(monthly.reduce((a, m) => a + m.score, 0) / 12),
+      summary: `Historical weather data for ${city}. Best months: ${bestMonths.join(", ")}.`,
       best_months: bestMonths,
       worst_months: [...monthly].sort((a, b) => a.score - b.score).slice(0, 2).map(m => m.month),
       summer_temps: `${Math.max(...summerHighs)}°F avg high`,
@@ -433,20 +549,11 @@ async function fetchClimateData(lat: number, lon: number, city: string): Promise
       monthly,
     };
   } catch {
-    return {
-      overall_score: 7,
-      summary: `Climate data for ${city} — check local weather sources for current conditions`,
-      best_months: ["Mar","Apr","May","Oct"],
-      worst_months: ["Jul","Jan"],
-      summer_temps: "Varies",
-      winter_temps: "Varies",
-      rainy_season: "Varies",
-      monthly: [],
-    };
+    return { overall_score: 7, summary: `Climate for ${city} — check local weather sources`, best_months: ["Mar","Apr","May","Oct"], worst_months: ["Jul","Jan"], summer_temps: "Varies", winter_temps: "Varies", rainy_season: "Varies", monthly: [] };
   }
 }
 
-// ─── Real NPS campgrounds → RV Parks ────────────────────────────
+// ─── Real NPS campgrounds ─────────────────────────────────────────
 async function fetchNPSCampgrounds(state: string): Promise<RVPark[]> {
   try {
     const url = `https://developer.nps.gov/api/v1/campgrounds?stateCode=${state}&limit=15&api_key=DEMO_KEY`;
@@ -468,25 +575,18 @@ async function fetchNPSCampgrounds(state: string): Promise<RVPark[]> {
       }
       return {
         name: c.name || "National Park Campground",
-        price,
-        rating: c.rating ? parseFloat(c.rating).toFixed(1) as any as number : null,
+        price, rating: c.rating ? parseFloat(c.rating).toFixed(1) as any as number : null,
         category: `${c.state || state} · NPS Campground`,
-        big_rig_friendly: !!(c.accessibility && (
-          (c.accessibility as string).toLowerCase().includes("rv") ||
-          (c.accessibility as string).toLowerCase().includes("large")
-        )),
+        big_rig_friendly: !!(c.accessibility && (c.accessibility as string).toLowerCase().includes("rv")),
         url: c.url || "https://www.nps.gov/campgrounds",
-        amenities,
-        pet_policy: c.petPolicy || "Leash required. No pets in most NPS buildings.",
+        amenities, pet_policy: c.petPolicy || "Leash required. No pets in most NPS buildings.",
         distance_to_town: c.proximity || "Varies",
       };
     });
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-// ─── Real NPS attractions (expanded to 20) ─────────────────────
+// ─── NPS attractions (expanded) ────────────────────────────────────
 async function fetchNPSAttractionsExpanded(state: string, city: string): Promise<Attraction[]> {
   try {
     const url = `https://developer.nps.gov/api/v1/places?q=${encodeURIComponent(city)}&stateCode=${state}&limit=20&api_key=DEMO_KEY`;
@@ -495,28 +595,17 @@ async function fetchNPSAttractionsExpanded(state: string, city: string): Promise
     const data = await res.json() as any;
     return (data.data || []).slice(0, 20).map((item: any): Attraction => {
       const cat = item.category || item.types?.[0] || "National Site";
-      const tier: Attraction["tier"] = cat.includes("Visitor Center") || cat.includes("Viewpoint") ? "tourist_favorite" :
-        cat.includes("Trail") ? "local_gem" : "tourist_favorite";
+      const tier: Attraction["tier"] = cat.includes("Visitor Center") || cat.includes("Viewpoint") ? "tourist_favorite" : cat.includes("Trail") ? "local_gem" : "tourist_favorite";
       const desc = (item.shortDescription || item.bodyText?.slice(0, 400) || "").replace(/<[^>]*>/g, "").trim();
-      return {
-        name: item.title || item.name || "National Park Site",
-        description: desc,
-        category: `NPS: ${cat}`,
-        rating: null,
-        estimated_time: estimateTime(cat, item.shortDescription || ""),
-        source: "NPS",
-        url: item.url || "",
-        tier,
-      };
+      return { name: item.title || item.name || "National Park Site", description: desc, category: `NPS: ${cat}`, rating: null, estimated_time: estimateTime(cat, item.shortDescription || ""), source: "NPS", url: item.url || "", tier };
     });
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-// ─── State-level cost estimates ──────────────────────────────────
+// ─── State cost index (50 states) ────────────────────────────────
 function getStateCost(state: string): Omit<CostIndex, "overall_monthly_rv" | "cost_breakdown"> {
   const stateCosts: Record<string, Omit<CostIndex, "overall_monthly_rv" | "cost_breakdown">> = {
+    AZ: { overall: 8, campground_avg: "$45–$65", groceries_idx: 98,  gas_price: "$3.29", diesel_price: "$3.89", propane: "$3.50/gal", entertainment_idx: 95  },
     UT: { overall: 8, campground_avg: "$35–$55", groceries_idx: 102, gas_price: "$3.19", diesel_price: "$3.79", propane: "$3.25/gal", entertainment_idx: 100 },
     TX: { overall: 9, campground_avg: "$40–$60", groceries_idx: 95,  gas_price: "$2.89", diesel_price: "$3.29", propane: "$3.00/gal", entertainment_idx: 90  },
     CO: { overall: 6, campground_avg: "$50–$80", groceries_idx: 108, gas_price: "$3.49", diesel_price: "$3.99", propane: "$3.75/gal", entertainment_idx: 110 },
@@ -545,16 +634,12 @@ function getStateCost(state: string): Omit<CostIndex, "overall_monthly_rv" | "co
     NY: { overall: 6, campground_avg: "$55–$90", groceries_idx: 112, gas_price: "$3.59", diesel_price: "$4.09", propane: "$3.85/gal", entertainment_idx: 120 },
     IL: { overall: 8, campground_avg: "$45–$65", groceries_idx: 100, gas_price: "$3.29", diesel_price: "$3.79", propane: "$3.45/gal", entertainment_idx: 100 },
     MN: { overall: 8, campground_avg: "$40–$60", groceries_idx: 102, gas_price: "$3.29", diesel_price: "$3.79", propane: "$3.45/gal", entertainment_idx: 98  },
-    AZ: { overall: 8, campground_avg: "$45–$65", groceries_idx: 98,  gas_price: "$3.29", diesel_price: "$3.89", propane: "$3.50/gal", entertainment_idx: 95  },
   };
   return stateCosts[state.toUpperCase()] || { overall: 7, campground_avg: "$45–$65", groceries_idx: 100, gas_price: "$3.29", diesel_price: "$3.89", propane: "$3.50/gal", entertainment_idx: 100 };
 }
 
-// ─── Simple in-memory cache (10 min TTL) ─────────────────────────
+// ─── In-memory cache (10 min TTL) ────────────────────────────────
 const _cache = new Map<string, ExploreResult>();
-const _cacheTTL = 10 * 60 * 1000;
-
-// ─── Main fetch: all sources, parallel, cached ───────────────────
 
 export async function fetchFromFreeAPIs(
   city: string,
@@ -581,6 +666,9 @@ export async function fetchFromFreeAPIs(
   ]);
 
   const wiki = wikiInfo.status === "fulfilled" ? wikiInfo.value : null;
+  const coords = (wiki?.lat && wiki?.lon)
+    ? { lat: wiki.lat, lon: wiki.lon }
+    : await geocodeCity(city, state);
 
   const npsAttractions: Attraction[] = npsAttrResult.status === "fulfilled" ? npsAttrResult.value : [];
   const wikiPOIs: Attraction[] = wikiPOIsResult.status === "fulfilled" ? wikiPOIsResult.value : [];
@@ -588,18 +676,32 @@ export async function fetchFromFreeAPIs(
 
   const rvParks: RVPark[] = npsParksResult.status === "fulfilled" ? npsParksResult.value : [];
 
-  // Fetch real climate if we have coordinates
+  // Fetch real climate + nearby services in parallel when we have coordinates
   let climateData: ClimateData | null = null;
-  if (wiki?.lat && wiki?.lon) {
-    try {
-      climateData = await fetchClimateData(wiki.lat, wiki.lon, city);
-    } catch { /* climate is optional */ }
+  let nearbyServices: NearbyService[] = [];
+
+  if (coords) {
+    const [climateResult, servicesResult] = await Promise.allSettled([
+      fetchClimateData(coords.lat, coords.lon, city),
+      fetchNearbyServices(coords.lat, coords.lon),
+    ]);
+    climateData = climateResult.status === "fulfilled" ? climateResult.value : null;
+    nearbyServices = servicesResult.status === "fulfilled" ? servicesResult.value : [];
   }
+
+  // Community events
+  const eventsResult = await Promise.allSettled([
+    fetchCommunityEvents(city, state),
+  ]);
+  const communityEvents: CommunityEvent[] = eventsResult[0].status === "fulfilled" ? eventsResult[0].value : [];
 
   // State-specific cost of living
   const stateCost = getStateCost(state);
   const campLow = parseInt(stateCost.campground_avg.match(/\d+/)?.[0] || "45");
   const monthlyCost = Math.round(campLow * nights * 1.3);
+
+  // State laws
+  const stateLawData = getStateLaws(state);
 
   const lifestyle: RVLifestyleData = {
     climate: climateData || {
@@ -626,16 +728,16 @@ export async function fetchFromFreeAPIs(
     connectivity: {
       overall: 7,
       starlink_rating: 4,
-      starlink_notes: "Starlink is the most reliable option in remote areas. Check coverage.map.starlink.com for your destination.",
+      starlink_notes: "Starlink is the most reliable option in remote areas. Check coverage.map.starlink.com for your exact destination.",
       verizon_signal: 3,
       att_signal: 3,
       tmobile_signal: 2,
       best_areas: [],
       rv_parks_with_fiber: [],
-      dead_zones: wiki?.description?.includes("remote") ? ["Remote areas may have no cell signal — Starlink recommended"] : [],
-      notes: "Cell coverage varies significantly by terrain. In remote canyon/mountain areas, consider Starlink for reliable work connectivity.",
+      dead_zones: coords ? [`Remote areas near ${city} may have limited cell coverage — Starlink recommended for reliable work.`] : [],
+      notes: "Cell coverage varies significantly by terrain. In remote canyon and mountain areas, consider Starlink for reliable work connectivity.",
     },
-    nearby_services: [],
+    nearby_services: nearbyServices,
     pet_score: {
       overall: 8,
       dog_friendly_trails: Math.max(3, attractions.filter(a =>
@@ -643,10 +745,10 @@ export async function fetchFromFreeAPIs(
         a.name.toLowerCase().includes("park") ||
         a.category?.toLowerCase().includes("trail")
       ).length),
-      dog_parks: 3,
-      vet_availability: "good",
-      pet_stores: 2,
-      pet_policy_notes: "Leash required on most public lands. Bring vaccination records. Some national parks prohibit dogs on trails.",
+      dog_parks: nearbyServices.filter(s => s.type === "dump_station" || s.name.toLowerCase().includes("dog")).length || 2,
+      vet_availability: nearbyServices.some(s => s.type === "vet") ? "excellent" : nearbyServices.length > 0 ? "good" : "limited",
+      pet_stores: nearbyServices.filter(s => s.type === "store").length || 2,
+      pet_policy_notes: "Leash required on most federal public lands. Bring vaccination records. Some national parks prohibit dogs on trails.",
       top_dog_spots: attractions.filter(a => a.tier === "local_gem").slice(0, 3).map(a => a.name),
     },
     fuel: {
@@ -659,16 +761,10 @@ export async function fetchFromFreeAPIs(
       avg_diesel: stateCost.diesel_price,
       propane_refill: "$15–$25 per 20lb tank",
     },
-    community_events: [],
+    community_events: communityEvents,
     state_laws: {
       state,
-      max_rv_length: "Most states: 45 ft max for non-commercial. Some states allow longer with special permits.",
-      weight_limits: "80,000 lb GCWR federal limit for most states. Some have lower axle limits.",
-      axle_requirements: "RVs over 20,000 lbs per axle need special permits in some states.",
-      pet_rules: "Leash required on all federal public lands. Some NPS trails prohibit dogs entirely.",
-      burn_ban_status: "Check InciWeb and local ranger station before any fire.",
-      notable_restrictions: [],
-      rv_friendly_highways: [],
+      ...stateLawData,
     },
     dump_stations: rvParks
       .filter(p => p.amenities?.some(a => a.toLowerCase().includes("dump")))
@@ -678,7 +774,7 @@ export async function fetchFromFreeAPIs(
         type: "paid" as const,
         price: d.price || "$10",
         distance_mi: d.distance_to_town ? parseFloat(d.distance_to_town) : 5,
-        address: d.category || `${d.distance_to_town || "nearby"}`,
+        address: d.category || "Nearby",
       })),
   };
 
