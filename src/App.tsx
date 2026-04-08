@@ -77,7 +77,7 @@ function AppHeader() {
 // ─── Explorer Tab ─────────────────────────────────────────────────
 function ExplorerTab() {
   const [destination, setDestination] = useState("");
-  const [nights, setNights] = useState(3);
+  const [nights, setNights] = useState(7);
   const [result, setResult] = useState<ExploreResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +120,7 @@ function ExplorerTab() {
     }
   }, [destination, nights]);
 
-  const nightsOptions = [1, 2, 3, 4, 5];
+  const nightsOptions = [1, 2, 3, 5, 7, 14, 21, 30];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
