@@ -56,21 +56,21 @@ interface BentoGridProps {
   children: ReactNode;
   cols?: 1 | 2 | 3 | 4;
   className?: string;
+  minCellWidth?: string;
 }
 
-export function BentoGrid({ children, cols = 2, className }: BentoGridProps) {
+export function BentoGrid({ children, cols = 2, className, minCellWidth }: BentoGridProps) {
   return (
     <div
       className={cn("bento-grid", className)}
       style={{
-        gridTemplateColumns:
-          cols === 1
-            ? "1fr"
-            : cols === 2
-            ? "repeat(2, 1fr)"
-            : cols === 3
-            ? "repeat(3, 1fr)"
-            : "repeat(4, 1fr)",
+        gridTemplateColumns: minCellWidth
+          ? `repeat(auto-fit, minmax(${minCellWidth}, 1fr))`
+          : cols === 1
+          ? "1fr"
+          : cols === 2
+          ? "repeat(auto-fit, minmax(280px, 1fr))"
+          : "repeat(auto-fit, minmax(220px, 1fr))",
       }}
     >
       {children}

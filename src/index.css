@@ -110,6 +110,16 @@ body {
     display: grid;
     gap: 16px;
     padding: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  /* Mobile: single column */
+  @media (max-width: 640px) {
+    .bento-grid {
+      grid-template-columns: 1fr !important;
+      padding: 16px;
+      gap: 12px;
+    }
   }
 
   /* ── Card Padding ── */
