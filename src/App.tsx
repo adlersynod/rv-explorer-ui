@@ -93,6 +93,8 @@ function ExplorerTab() {
 
   async function handleExplore() {
     if (!destination.trim()) return;
+    // Clear result immediately so old data disappears before new data arrives
+    setResult(null);
     setLoading(true);
     setError(null);
     try {
@@ -162,8 +164,10 @@ function ExplorerTab() {
         </div>
       </BentoCard>
 
-      {loading && !result && <LoadingSkeleton />}
+      {/* ── Loading ─────────────────────────────────────── */}
+      {loading && <LoadingSkeleton />}
 
+      {/* ── Error ────────────────────────────────────────── */}
       {error && (
         <BentoCard><p style={{ color: "#f87171", fontSize: "0.875rem" }}>{error}</p></BentoCard>
       )}
@@ -251,6 +255,8 @@ function FullTimeTab() {
 
   async function handleSearch() {
     if (!destination.trim()) return;
+    // Clear result immediately so old data disappears before new data arrives
+    setResult(null);
     setLoading(true);
     setError(null);
     try {
@@ -315,7 +321,8 @@ function FullTimeTab() {
         </div>
       </BentoCard>
 
-      {loading && !result && (
+      {/* ── Loading Skeleton ───────────────────────────────── */}
+      {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <BentoGrid cols={4}>
             {[0,1,2,3].map(i => <div key={i} className="skeleton" style={{ height: "88px", borderRadius: "10px" }} />)}
@@ -327,10 +334,13 @@ function FullTimeTab() {
         </div>
       )}
 
+      {/* ── Error ────────────────────────────────────────── */}
       {error && <BentoCard><p style={{ color: "#f87171", fontSize: "0.875rem" }}>{error}</p></BentoCard>}
 
+      {/* ── Dashboard ───────────────────────────────────── */}
       {result && !loading && <LifestyleDashboard result={result} />}
 
+      {/* ── Empty State ─────────────────────────────────── */}
       {!result && !loading && (
         <BentoCard>
           <p style={{ color: "#71717a", fontSize: "0.875rem", textAlign: "center", padding: "24px" }}>
